@@ -15,20 +15,63 @@ let lockoutUntil = 0;
  */
 function generateSalt(): string {
     const array = new Uint8Array(SALT_LENGTH);
-    crypto.getRandomValues(array);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        crypto.getRandomValues(array);
+    } else {
+        // Fallback for non-secure contexts (dev only)
+        for (let i = 0; i < SALT_LENGTH; i++) {
+            array[i] = Math.floor(Math.random() * 256);
+        }
+    }
     return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
- * Hashes a PIN with salt using SHA-256
+ * Simple hash function fallback when crypto.subtle is unavailable
+ * Why: crypto.subtle requires HTTPS, but we need to work in dev
+ */
+function simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    // Expand to longer hash by running multiple rounds
+    let result = '';
+    for (let round = 0; round < 8; round++) {
+        let roundHash = hash + round * 31337;
+        for (let i = 0; i < str.length; i++) {
+            roundHash = ((roundHash << 5) - roundHash) + str.charCodeAt(i) + round;
+            roundHash = roundHash & roundHash;
+        }
+        result += Math.abs(roundHash).toString(16).padStart(8, '0');
+    }
+    return result;
+}
+
+/**
+ * Hashes a PIN with salt using SHA-256 (or fallback)
  * Why: Secure storage without storing the actual PIN
  */
 async function hashPin(pin: string, salt: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(salt + pin);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    const input = salt + pin;
+
+    // Try Web Crypto API first (requires HTTPS)
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+        try {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(input);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+        } catch {
+            // Fall through to simple hash
+        }
+    }
+
+    // Fallback for HTTP/dev environments
+    return simpleHash(input);
 }
 
 /**
