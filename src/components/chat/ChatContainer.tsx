@@ -9,6 +9,7 @@ import { useRef, useEffect, useState, useCallback, FormEvent } from 'react';
 import { useAppStore } from '@/lib/store';
 import { streamChat, type ChatMessage } from '@/lib/openrouter';
 import { saveMessage, getRecentMessages } from '@/lib/memory/MemoryStore';
+import { analyzeStreamingEmotion } from '@/lib/emotionDetector';
 import { MessageBubble } from './MessageBubble';
 import { BuddyScene } from '@/components/buddy/BuddyScene';
 
@@ -120,6 +121,13 @@ Keep responses concise but thoughtful. Show genuine interest in the user.`;
                 abortControllerRef.current.signal
             )) {
                 assistantContent += chunk;
+
+                // Analyze emotion in response content and update mood
+                const detectedMood = analyzeStreamingEmotion(assistantContent, 'talking');
+                if (detectedMood !== 'talking') {
+                    setBuddyMood(detectedMood);
+                }
+
                 // Update the message in-place by modifying store
                 useAppStore.setState((state) => ({
                     messages: state.messages.map((m) =>
@@ -128,12 +136,13 @@ Keep responses concise but thoughtful. Show genuine interest in the user.`;
                 }));
             }
 
-            // Save to IndexedDB
+            // Save to IndexedDB and set final mood based on content
             await saveMessage('assistant', assistantContent);
-            setBuddyMood('happy');
+            const finalMood = analyzeStreamingEmotion(assistantContent, 'happy');
+            setBuddyMood(finalMood);
 
             // Return to idle after a moment
-            setTimeout(() => setBuddyMood('idle'), 2000);
+            setTimeout(() => setBuddyMood('idle'), 3000);
         } catch (error) {
             if ((error as Error).name !== 'AbortError') {
                 setBuddyMood('confused');

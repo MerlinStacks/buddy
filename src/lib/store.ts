@@ -7,7 +7,17 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { OpenRouterModel } from './openrouter';
 
-export type BuddyMood = 'idle' | 'thinking' | 'talking' | 'happy' | 'sleepy' | 'confused';
+export type BuddyMood =
+    | 'idle'
+    | 'thinking'
+    | 'talking'
+    | 'happy'
+    | 'sleepy'
+    | 'confused'
+    | 'excited'
+    | 'sad'
+    | 'surprised'
+    | 'embarrassed';
 export type PersonalityLevel = 'playful' | 'balanced' | 'professional';
 export type Theme = 'dark' | 'light' | 'system';
 

@@ -2,27 +2,51 @@
 
 /**
  * Buddy Blob 3D Component
- * Animated greenish blob with cute face and mood-responsive animations
+ * Animated greenish blob with expressive face and mood-responsive animations.
+ * Orchestrates sub-components for eyes, mouth, eyebrows, and effects.
  */
 
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { BuddyMood } from '@/lib/store';
+import { BuddyEyes } from './BuddyEyes';
+import { BuddyMouth } from './BuddyMouth';
+import { BuddyEyebrows } from './BuddyEyebrows';
+import { BuddyEffects } from './BuddyEffects';
 
 interface BuddyBlobProps {
     mood: BuddyMood;
 }
 
-// Eye positions relative to blob center
-const LEFT_EYE_POS = new THREE.Vector3(-0.35, 0.2, 0.8);
-const RIGHT_EYE_POS = new THREE.Vector3(0.35, 0.2, 0.8);
+/**
+ * Body configuration per mood.
+ * Controls color tint, scale animation, and rotation.
+ */
+const BODY_CONFIGS: Record<BuddyMood, {
+    colorTint: string;
+    scaleAmplitude: number;
+    scaleSpeed: number;
+    rotationAmplitude: number;
+    rotationSpeed: number;
+    squashFactor: number;
+}> = {
+    idle: { colorTint: '#88d8b0', scaleAmplitude: 0.03, scaleSpeed: 1.5, rotationAmplitude: 0, rotationSpeed: 0, squashFactor: 0 },
+    thinking: { colorTint: '#7ec8a5', scaleAmplitude: 0.02, scaleSpeed: 2, rotationAmplitude: 0.1, rotationSpeed: 1, squashFactor: 0 },
+    talking: { colorTint: '#88d8b0', scaleAmplitude: 0.08, scaleSpeed: 8, rotationAmplitude: 0, rotationSpeed: 0, squashFactor: 0.04 },
+    happy: { colorTint: '#9ee8c0', scaleAmplitude: 0.05, scaleSpeed: 4, rotationAmplitude: 0.15, rotationSpeed: 3, squashFactor: 0.03 },
+    sleepy: { colorTint: '#78c8a0', scaleAmplitude: 0.02, scaleSpeed: 0.8, rotationAmplitude: 0, rotationSpeed: 0, squashFactor: 0.02 },
+    confused: { colorTint: '#80d0a8', scaleAmplitude: 0.04, scaleSpeed: 3, rotationAmplitude: 0.2, rotationSpeed: 2, squashFactor: 0 },
+    excited: { colorTint: '#a0f0d0', scaleAmplitude: 0.08, scaleSpeed: 6, rotationAmplitude: 0.2, rotationSpeed: 4, squashFactor: 0.05 },
+    sad: { colorTint: '#70b090', scaleAmplitude: 0.015, scaleSpeed: 1, rotationAmplitude: 0, rotationSpeed: 0, squashFactor: 0.03 },
+    surprised: { colorTint: '#98e0b8', scaleAmplitude: 0.1, scaleSpeed: 10, rotationAmplitude: 0, rotationSpeed: 0, squashFactor: 0.08 },
+    embarrassed: { colorTint: '#90d8b0', scaleAmplitude: 0.025, scaleSpeed: 2, rotationAmplitude: 0.05, rotationSpeed: 1.5, squashFactor: 0.01 },
+};
 
 export function BuddyBlob({ mood }: BuddyBlobProps) {
     const blobRef = useRef<THREE.Mesh>(null);
-    const leftEyeRef = useRef<THREE.Mesh>(null);
-    const rightEyeRef = useRef<THREE.Mesh>(null);
-    const mouthRef = useRef<THREE.Mesh>(null);
+    const currentConfig = useRef({ ...BODY_CONFIGS.idle });
+    const currentColor = useRef(new THREE.Color('#88d8b0'));
 
     // Blob material with translucent green glow
     const blobMaterial = useMemo(
@@ -42,86 +66,51 @@ export function BuddyBlob({ mood }: BuddyBlobProps) {
         []
     );
 
-    // Eye material (shiny black)
-    const eyeMaterial = useMemo(
-        () =>
-            new THREE.MeshStandardMaterial({
-                color: '#1a1a2e',
-                roughness: 0.1,
-                metalness: 0.3,
-            }),
-        []
-    );
-
-    // Animate based on mood
     useFrame((state) => {
         if (!blobRef.current) return;
         const t = state.clock.elapsedTime;
+        const target = BODY_CONFIGS[mood];
 
-        // Base wobble animation
-        let scaleX = 1;
-        let scaleY = 1;
-        let scaleZ = 1;
+        // Smooth lerp config
+        const lerp = (a: number, b: number, factor: number) => a + (b - a) * factor;
+        const lerpSpeed = 0.05;
 
-        switch (mood) {
-            case 'idle':
-                // Gentle breathing
-                scaleY = 1 + Math.sin(t * 1.5) * 0.03;
-                scaleX = 1 - Math.sin(t * 1.5) * 0.015;
-                break;
+        currentConfig.current.scaleAmplitude = lerp(currentConfig.current.scaleAmplitude, target.scaleAmplitude, lerpSpeed);
+        currentConfig.current.scaleSpeed = lerp(currentConfig.current.scaleSpeed, target.scaleSpeed, lerpSpeed);
+        currentConfig.current.rotationAmplitude = lerp(currentConfig.current.rotationAmplitude, target.rotationAmplitude, lerpSpeed);
+        currentConfig.current.rotationSpeed = lerp(currentConfig.current.rotationSpeed, target.rotationSpeed, lerpSpeed);
+        currentConfig.current.squashFactor = lerp(currentConfig.current.squashFactor, target.squashFactor, lerpSpeed);
 
-            case 'thinking':
-                // Slow pulse
-                const pulse = Math.sin(t * 2) * 0.02;
-                scaleX = scaleY = scaleZ = 1 + pulse;
-                // Slight tilt
-                blobRef.current.rotation.z = Math.sin(t) * 0.1;
-                break;
+        const config = currentConfig.current;
 
-            case 'talking':
-                // Fast bouncy
-                scaleY = 1 + Math.sin(t * 8) * 0.08;
-                scaleX = 1 - Math.sin(t * 8) * 0.04;
-                break;
+        // Color interpolation
+        const targetColor = new THREE.Color(target.colorTint);
+        currentColor.current.lerp(targetColor, 0.03);
+        blobMaterial.color.copy(currentColor.current);
 
-            case 'happy':
-                // Excited wiggle
-                scaleY = 1 + Math.sin(t * 4) * 0.05;
-                scaleX = 1 + Math.cos(t * 4) * 0.03;
-                blobRef.current.rotation.z = Math.sin(t * 3) * 0.15;
-                break;
+        // Scale animation with squash/stretch
+        const scaleBase = 1;
+        const breathe = Math.sin(t * config.scaleSpeed) * config.scaleAmplitude;
 
-            case 'sleepy':
-                // Slow, droopy
-                scaleY = 0.95 + Math.sin(t * 0.8) * 0.02;
-                scaleX = 1.02;
-                break;
+        // Squash/stretch: when Y increases, X/Z decrease (and vice versa)
+        const squash = Math.sin(t * config.scaleSpeed * 2) * config.squashFactor;
 
-            case 'confused':
-                // Wobbly uncertainty
-                scaleX = 1 + Math.sin(t * 3) * 0.04;
-                blobRef.current.rotation.z = Math.sin(t * 2) * 0.2;
-                break;
-        }
+        const scaleX = scaleBase + breathe * 0.5 - squash;
+        const scaleY = scaleBase + breathe + squash;
+        const scaleZ = scaleBase + breathe * 0.5 - squash;
 
         blobRef.current.scale.set(scaleX, scaleY, scaleZ);
 
-        // Eye animations
-        if (leftEyeRef.current && rightEyeRef.current) {
-            // Blink occasionally
-            const blink = Math.sin(t * 0.3) > 0.95;
-            const eyeScaleY = blink ? 0.1 : mood === 'sleepy' ? 0.5 : 1;
-            leftEyeRef.current.scale.y = eyeScaleY;
-            rightEyeRef.current.scale.y = eyeScaleY;
-
-            // Eyes follow a subtle pattern
-            const eyeLookX = Math.sin(t * 0.5) * 0.05;
-            const eyeLookY = Math.cos(t * 0.7) * 0.03;
-            leftEyeRef.current.position.x = LEFT_EYE_POS.x + eyeLookX;
-            leftEyeRef.current.position.y = LEFT_EYE_POS.y + eyeLookY;
-            rightEyeRef.current.position.x = RIGHT_EYE_POS.x + eyeLookX;
-            rightEyeRef.current.position.y = RIGHT_EYE_POS.y + eyeLookY;
+        // Rotation animation
+        if (config.rotationAmplitude > 0) {
+            blobRef.current.rotation.z = Math.sin(t * config.rotationSpeed) * config.rotationAmplitude;
+        } else {
+            // Smoothly return to neutral
+            blobRef.current.rotation.z *= 0.95;
         }
+
+        // Subtle Y-axis rotation for life
+        blobRef.current.rotation.y = Math.sin(t * 0.3) * 0.05;
     });
 
     return (
@@ -131,31 +120,12 @@ export function BuddyBlob({ mood }: BuddyBlobProps) {
                 <sphereGeometry args={[1, 64, 64]} />
             </mesh>
 
-            {/* Left eye */}
-            <mesh ref={leftEyeRef} position={LEFT_EYE_POS} material={eyeMaterial}>
-                <sphereGeometry args={[0.12, 32, 32]} />
-                {/* Eye highlight */}
-                <mesh position={[0.03, 0.03, 0.08]}>
-                    <sphereGeometry args={[0.04, 16, 16]} />
-                    <meshBasicMaterial color="#ffffff" />
-                </mesh>
-            </mesh>
-
-            {/* Right eye */}
-            <mesh ref={rightEyeRef} position={RIGHT_EYE_POS} material={eyeMaterial}>
-                <sphereGeometry args={[0.12, 32, 32]} />
-                {/* Eye highlight */}
-                <mesh position={[0.03, 0.03, 0.08]}>
-                    <sphereGeometry args={[0.04, 16, 16]} />
-                    <meshBasicMaterial color="#ffffff" />
-                </mesh>
-            </mesh>
-
-            {/* Smile - simple curved line */}
-            <mesh ref={mouthRef} position={[0, -0.15, 0.9]} rotation={[0, 0, 0]}>
-                <torusGeometry args={[0.15, 0.025, 16, 32, Math.PI]} />
-                <meshStandardMaterial color="#1a1a2e" />
-            </mesh>
+            {/* Facial features */}
+            <BuddyEyes mood={mood} />
+            <BuddyMouth mood={mood} />
+            <BuddyEyebrows mood={mood} />
+            <BuddyEffects mood={mood} />
         </group>
     );
 }
+
